@@ -1,0 +1,8 @@
+.build/
+Build/
+.DS_Store
+*.app/
+*.zip
+*.xcuserstate
+DerivedData/
+Support/Disko.iconset/
