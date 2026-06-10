@@ -21,7 +21,7 @@ struct SystemSnapshot {
     let updatedAt: Date
 
     var menuBarTitle: String {
-        "Disko"
+        "Scope"
     }
 
     var updatedText: String {
@@ -34,7 +34,7 @@ struct SystemSnapshot {
         }
 
         if disk.usedRatio >= 0.75 {
-            return "Storage is getting dense. Disko found cleanup candidates below."
+            return "Storage is getting dense. Scope found cleanup candidates below."
         }
 
         return "Plenty of creative room on this Mac."
@@ -990,10 +990,10 @@ struct AppUsageMetric: Identifiable {
     var sourceDetailText: String {
         if isVisible {
             if processCount > 1 {
-                return "Combined view of \(processCount) processes that belong to this app, including helpers, renderers, networking, and GPU workers when Disko can map them back to the app bundle."
+                return "Combined view of \(processCount) processes that belong to this app, including helpers, renderers, networking, and GPU workers when Scope can map them back to the app bundle."
             }
 
-            return "Main visible app process. If helper processes exist, Disko rolls them into this row when they can be mapped to the same app bundle."
+            return "Main visible app process. If helper processes exist, Scope rolls them into this row when they can be mapped to the same app bundle."
         }
 
         if let known = knownServiceInfo {
@@ -1034,7 +1034,7 @@ struct AppUsageMetric: Identifiable {
         }
 
         let parent = parentName.map { " Parent: \($0)." } ?? ""
-        return "Disko could not map this to an app bundle. Check the path, parent, and owner for the best clue.\(parent)"
+        return "Scope could not map this to an app bundle. Check the path, parent, and owner for the best clue.\(parent)"
     }
 
     var inspectionText: String {
@@ -1108,7 +1108,7 @@ struct AppUsageMetric: Identifiable {
             reasons.append(
                 AppUsageReason(
                     title: cpuRatio >= 0.20 ? "High CPU" : "CPU Activity",
-                    detail: "\(cpuDetailText). macOS reports raw process CPU per core, so Disko normalizes this to the whole Mac.",
+                    detail: "\(cpuDetailText). macOS reports raw process CPU per core, so Scope normalizes this to the whole Mac.",
                     symbol: "cpu",
                     tint: cpuPressureColor
                 )
@@ -3261,7 +3261,7 @@ final class MetricsSampler {
         process.arguments = arguments
 
         let outputURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("disko-\(UUID().uuidString).out")
+            .appendingPathComponent("scope-\(UUID().uuidString).out")
 
         FileManager.default.createFile(atPath: outputURL.path, contents: nil)
 

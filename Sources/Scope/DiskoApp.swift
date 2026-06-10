@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 @main
-struct DiskoApp: App {
+struct ScopeApp: App {
     @StateObject private var monitor = SystemMonitor()
 
     init() {
@@ -21,7 +21,7 @@ struct DiskoApp: App {
         }
         .menuBarExtraStyle(.window)
 
-        Window("Disko", id: "details") {
+        Window("Scope", id: "details") {
             DetailWindowView(monitor: monitor)
         }
         .defaultSize(width: 920, height: 680)

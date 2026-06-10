@@ -97,7 +97,7 @@ struct DashboardView: View {
                 )
 
             VStack(alignment: .leading, spacing: 1) {
-                Text("Disko")
+                Text("Scope")
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
                 Text(monitor.isScanningDetails ? "Scanning" : monitor.snapshot.updatedAt.formatted(date: .omitted, time: .shortened))
                     .font(.system(size: 10))
@@ -136,7 +136,7 @@ struct DashboardView: View {
                     .frame(width: 24, height: 24)
             }
             .buttonStyle(.borderless)
-            .help("Quit Disko")
+            .help("Quit Scope")
         }
     }
 

@@ -3,6 +3,7 @@ import SwiftUI
 
 struct DetailWindowView: View {
     @ObservedObject var monitor: SystemMonitor
+    @StateObject private var gitHubSync = GitHubSyncMonitor()
     @State private var section: DetailSection = .apps
 
     var body: some View {
@@ -22,6 +23,11 @@ struct DetailWindowView: View {
         .onAppear {
             monitor.refresh(forceDeep: monitor.snapshot.storageAnalysis.scannedFileCount == 0)
         }
+        .onChange(of: section) { newSection in
+            if newSection == .github && gitHubSync.repos.isEmpty {
+                gitHubSync.refresh()
+            }
+        }
     }
 
     private var header: some View {
@@ -31,7 +37,7 @@ struct DetailWindowView: View {
                 .frame(width: 34, height: 34)
 
             VStack(alignment: .leading, spacing: 1) {
-                Text("Disko")
+                Text("Scope")
                     .font(.system(size: 17, weight: .semibold, design: .rounded))
                 Text(monitor.isScanningDetails ? "Scanning storage, apps, and network..." : monitor.snapshot.updatedText)
                     .font(.caption)
@@ -82,6 +88,8 @@ struct DetailWindowView: View {
             network
         case .health:
             health
+        case .github:
+            github
         }
     }
 
@@ -541,6 +549,10 @@ struct DetailWindowView: View {
         }
     }
 
+    private var github: some View {
+        GitHubSyncView(monitor: gitHubSync)
+    }
+
     private var healthValue: String {
         if monitor.snapshot.sensors.thermalState == "Serious" || monitor.snapshot.sensors.thermalState == "Critical" {
             return "Thermal"
@@ -688,6 +700,7 @@ private enum DetailSection: String, CaseIterable, Identifiable {
     case apps = "Apps"
     case network = "Network"
     case health = "Health"
+    case github = "GitHub"
 
     var id: String { rawValue }
 
@@ -705,6 +718,8 @@ private enum DetailSection: String, CaseIterable, Identifiable {
             return "arrow.up.arrow.down"
         case .health:
             return "gauge.with.dots.needle.67percent"
+        case .github:
+            return "arrow.triangle.2.circlepath"
         }
     }
 }

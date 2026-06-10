@@ -5,8 +5,8 @@ import Foundation
 
 let rootURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
 let supportURL = rootURL.appendingPathComponent("Support", isDirectory: true)
-let iconsetURL = supportURL.appendingPathComponent("Disko.iconset", isDirectory: true)
-let previewURL = supportURL.appendingPathComponent("DiskoIconPreview.png")
+let iconsetURL = supportURL.appendingPathComponent("Scope.iconset", isDirectory: true)
+let previewURL = supportURL.appendingPathComponent("ScopeIconPreview.png")
 
 try? FileManager.default.removeItem(at: iconsetURL)
 try FileManager.default.createDirectory(at: iconsetURL, withIntermediateDirectories: true)

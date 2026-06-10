@@ -12,7 +12,7 @@ struct MenuBarLoadView: View {
                 MiniLoadBar(value: memory, color: .teal)
             }
         }
-        .help("Disko CPU and memory")
+        .help("Scope CPU and memory")
     }
 }
 

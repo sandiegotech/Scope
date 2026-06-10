@@ -3,16 +3,16 @@
 import PackageDescription
 
 let package = Package(
-    name: "Disko",
+    name: "Scope",
     platforms: [
         .macOS(.v13)
     ],
     products: [
-        .executable(name: "Disko", targets: ["Disko"])
+        .executable(name: "Scope", targets: ["Scope"])
     ],
     targets: [
         .executableTarget(
-            name: "Disko",
+            name: "Scope",
             linkerSettings: [
                 .linkedFramework("IOKit"),
                 .linkedFramework("Metal")
