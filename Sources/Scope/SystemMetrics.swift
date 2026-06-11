@@ -372,9 +372,21 @@ struct NetworkMetric {
     let uploadBytesPerSecond: UInt64
     let interfaces: [NetworkInterfaceMetric]
     let connections: [NetworkConnectionMetric]
+    var downlinkTotalBytes: UInt64 = 0
+    var uplinkTotalBytes: UInt64 = 0
+    var downlinkResetDate: Date = Date()
+    var uplinkResetDate: Date = Date()
 
     var primaryText: String {
         "↓ \(downloadBytesPerSecond.rateString)  ↑ \(uploadBytesPerSecond.rateString)"
+    }
+
+    var downlinkTotalText: String {
+        downlinkTotalBytes == 0 ? "0 bytes" : downlinkTotalBytes.byteString
+    }
+
+    var uplinkTotalText: String {
+        uplinkTotalBytes == 0 ? "0 bytes" : uplinkTotalBytes.byteString
     }
 
     var detailText: String {
@@ -1968,7 +1980,72 @@ private struct ProcessAccessCounts {
     }
 }
 
+/// Persists a running total of bytes transferred, accumulated from the per-sample
+/// interface deltas. Counters survive relaunches and reboots (a reboot just resets
+/// the kernel counters, which produces a zero delta for that interval), and each
+/// direction can be reset independently with its own "since" date.
+final class NetworkUsageTracker {
+    private let defaults: UserDefaults
+    private static let downKey = "scope.network.totalDownBytes"
+    private static let upKey = "scope.network.totalUpBytes"
+    private static let downResetKey = "scope.network.downResetDate"
+    private static let upResetKey = "scope.network.upResetDate"
+
+    private var totalDownBytes: UInt64
+    private var totalUpBytes: UInt64
+    private var downResetDate: Date
+    private var upResetDate: Date
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        totalDownBytes = (defaults.object(forKey: Self.downKey) as? NSNumber)?.uint64Value ?? 0
+        totalUpBytes = (defaults.object(forKey: Self.upKey) as? NSNumber)?.uint64Value ?? 0
+
+        let now = Date()
+        if let stored = defaults.object(forKey: Self.downResetKey) as? Date {
+            downResetDate = stored
+        } else {
+            downResetDate = now
+            defaults.set(now, forKey: Self.downResetKey)
+        }
+
+        if let stored = defaults.object(forKey: Self.upResetKey) as? Date {
+            upResetDate = stored
+        } else {
+            upResetDate = now
+            defaults.set(now, forKey: Self.upResetKey)
+        }
+    }
+
+    func accumulate(downBytes: UInt64, upBytes: UInt64) {
+        guard downBytes > 0 || upBytes > 0 else { return }
+        totalDownBytes &+= downBytes
+        totalUpBytes &+= upBytes
+        defaults.set(NSNumber(value: totalDownBytes), forKey: Self.downKey)
+        defaults.set(NSNumber(value: totalUpBytes), forKey: Self.upKey)
+    }
+
+    func resetDownlink() {
+        totalDownBytes = 0
+        downResetDate = Date()
+        defaults.set(NSNumber(value: UInt64(0)), forKey: Self.downKey)
+        defaults.set(downResetDate, forKey: Self.downResetKey)
+    }
+
+    func resetUplink() {
+        totalUpBytes = 0
+        upResetDate = Date()
+        defaults.set(NSNumber(value: UInt64(0)), forKey: Self.upKey)
+        defaults.set(upResetDate, forKey: Self.upResetKey)
+    }
+
+    var totals: (down: UInt64, up: UInt64, downReset: Date, upReset: Date) {
+        (totalDownBytes, totalUpBytes, downResetDate, upResetDate)
+    }
+}
+
 final class MetricsSampler {
+    private let usageTracker = NetworkUsageTracker()
     private var previousCPU: CPUTicks?
     private var previousNetwork: NetworkCountersSample?
     private var cpuHistory: [Double] = []
@@ -2218,13 +2295,19 @@ final class MetricsSampler {
         let elapsed = max(current.timestamp.timeIntervalSince(previousNetwork?.timestamp ?? current.timestamp), 0.001)
         var totalDown: UInt64 = 0
         var totalUp: UInt64 = 0
+        var intervalDownBytes: UInt64 = 0
+        var intervalUpBytes: UInt64 = 0
         var interfaces: [NetworkInterfaceMetric] = []
 
         for counter in current.interfaces.values {
             let previous = previousNetwork?.interfaces[counter.name]
-            let down = previous.map { UInt64(Double(counter.received.saturatingDifference(from: $0.received)) / elapsed) } ?? 0
-            let up = previous.map { UInt64(Double(counter.sent.saturatingDifference(from: $0.sent)) / elapsed) } ?? 0
+            let downDelta = previous.map { counter.received.saturatingDifference(from: $0.received) } ?? 0
+            let upDelta = previous.map { counter.sent.saturatingDifference(from: $0.sent) } ?? 0
+            let down = UInt64(Double(downDelta) / elapsed)
+            let up = UInt64(Double(upDelta) / elapsed)
 
+            intervalDownBytes += downDelta
+            intervalUpBytes += upDelta
             totalDown += down
             totalUp += up
 
@@ -2253,12 +2336,27 @@ final class MetricsSampler {
             return lhsTraffic > rhsTraffic
         }
 
+        usageTracker.accumulate(downBytes: intervalDownBytes, upBytes: intervalUpBytes)
+        let usage = usageTracker.totals
+
         return NetworkMetric(
             downloadBytesPerSecond: totalDown,
             uploadBytesPerSecond: totalUp,
             interfaces: interfaces,
-            connections: connections
+            connections: connections,
+            downlinkTotalBytes: usage.down,
+            uplinkTotalBytes: usage.up,
+            downlinkResetDate: usage.downReset,
+            uplinkResetDate: usage.upReset
         )
+    }
+
+    func resetDownlinkTotal() {
+        usageTracker.resetDownlink()
+    }
+
+    func resetUplinkTotal() {
+        usageTracker.resetUplink()
     }
 
     private func sampleGPU() -> GPUMetric {

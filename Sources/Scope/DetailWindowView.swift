@@ -4,6 +4,7 @@ import SwiftUI
 struct DetailWindowView: View {
     @ObservedObject var monitor: SystemMonitor
     @StateObject private var gitHubSync = GitHubSyncMonitor()
+    @StateObject private var speedTest = SpeedTestModel()
     @State private var section: DetailSection = .apps
 
     var body: some View {
@@ -409,32 +410,27 @@ struct DetailWindowView: View {
     private var network: some View {
         VStack(alignment: .leading, spacing: 16) {
             LazyVGrid(columns: detailColumns, spacing: 12) {
-                DetailMetricCard(
-                    icon: "arrow.up.arrow.down.circle",
-                    tint: .blue,
-                    title: "Total Data",
-                    value: monitor.snapshot.network.totalText,
-                    detail: monitor.snapshot.network.totalDetailText,
-                    progress: nil
-                )
-
-                DetailMetricCard(
+                NetworkTotalCard(
                     icon: "arrow.down",
                     tint: .cyan,
-                    title: "Downloaded",
-                    value: monitor.snapshot.network.totalReceivedBytes.byteString,
-                    detail: "Now \(monitor.snapshot.network.downloadBytesPerSecond.rateString)",
-                    progress: nil
+                    title: "Downlink Total",
+                    value: monitor.snapshot.network.downlinkTotalText,
+                    rateText: "Now \(monitor.snapshot.network.downloadBytesPerSecond.rateString)",
+                    resetDate: monitor.snapshot.network.downlinkResetDate,
+                    onReset: { monitor.resetDownlinkTotal() }
                 )
+                .frame(height: networkCardHeight)
 
-                DetailMetricCard(
+                NetworkTotalCard(
                     icon: "arrow.up",
                     tint: .orange,
-                    title: "Uploaded",
-                    value: monitor.snapshot.network.totalSentBytes.byteString,
-                    detail: "Now \(monitor.snapshot.network.uploadBytesPerSecond.rateString)",
-                    progress: nil
+                    title: "Uplink Total",
+                    value: monitor.snapshot.network.uplinkTotalText,
+                    rateText: "Now \(monitor.snapshot.network.uploadBytesPerSecond.rateString)",
+                    resetDate: monitor.snapshot.network.uplinkResetDate,
+                    onReset: { monitor.resetUplinkTotal() }
                 )
+                .frame(height: networkCardHeight)
 
                 DetailMetricCard(
                     icon: "app.connected.to.app.below.fill",
@@ -444,6 +440,10 @@ struct DetailWindowView: View {
                     detail: monitor.snapshot.networkDataApps.first.map { "\($0.networkTotalText) total • \($0.networkText) now" } ?? "No app transfer reported",
                     progress: nil
                 )
+                .frame(height: networkCardHeight)
+
+                SpeedTestCard(model: speedTest)
+                    .frame(height: networkCardHeight)
             }
 
             SectionBlock(title: "App Data Use", symbol: "app.connected.to.app.below.fill") {
@@ -691,6 +691,8 @@ struct DetailWindowView: View {
     private var detailColumns: [GridItem] {
         [GridItem(.adaptive(minimum: 185), spacing: 12)]
     }
+
+    private var networkCardHeight: CGFloat { 138 }
 }
 
 private enum DetailSection: String, CaseIterable, Identifiable {
@@ -878,9 +880,11 @@ private struct DetailMetricCard: View {
                     .tint(tint)
                     .controlSize(.small)
             }
+
+            Spacer(minLength: 0)
         }
         .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(Color(nsColor: .controlBackgroundColor))
@@ -889,6 +893,168 @@ private struct DetailMetricCard: View {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .stroke(.separator.opacity(0.4), lineWidth: 1)
         )
+    }
+}
+
+private struct NetworkTotalCard: View {
+    let icon: String
+    let tint: Color
+    let title: String
+    let value: String
+    let rateText: String
+    let resetDate: Date
+    let onReset: () -> Void
+
+    private var dateText: String {
+        resetDate.formatted(date: .abbreviated, time: .shortened)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack(spacing: 8) {
+                Image(systemName: icon)
+                    .foregroundStyle(tint)
+                    .frame(width: 20)
+                Text(title)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                Spacer()
+            }
+
+            Text(value)
+                .font(.system(size: 20, weight: .semibold, design: .rounded))
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+
+            Text(rateText)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+
+            Spacer(minLength: 0)
+
+            HStack {
+                Text(dateText)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                Spacer()
+                Button("Reset", action: onReset)
+                    .buttonStyle(.borderless)
+                    .controlSize(.small)
+                    .font(.caption)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color(nsColor: .controlBackgroundColor))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(.separator.opacity(0.4), lineWidth: 1)
+        )
+    }
+}
+
+private struct SpeedTestCard: View {
+    @ObservedObject var model: SpeedTestModel
+
+    private var valueText: String {
+        if let download = model.downloadMbps {
+            return "↓ \(mbpsText(download))"
+        }
+
+        switch model.phase {
+        case .downloading:
+            return "Testing…"
+        case .uploading:
+            return "↑ Testing…"
+        default:
+            return "Run a test"
+        }
+    }
+
+    private var detailText: String {
+        switch model.phase {
+        case .failed:
+            return model.errorText ?? "Speed test failed."
+        case .downloading:
+            return "Measuring download…"
+        case .uploading:
+            return "Measuring upload…"
+        default:
+            break
+        }
+
+        var pieces: [String] = []
+        if let upload = model.uploadMbps {
+            pieces.append("↑ \(mbpsText(upload))")
+        }
+        if let date = model.lastRunDate {
+            pieces.append(date.formatted(date: .omitted, time: .shortened))
+        }
+
+        return pieces.isEmpty ? "Transfers ~35 MB on demand" : pieces.joined(separator: " • ")
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack(spacing: 8) {
+                Image(systemName: "speedometer")
+                    .foregroundStyle(.green)
+                    .frame(width: 20)
+                Text("Speed Test")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                Spacer()
+                if model.isRunning {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+            }
+
+            Text(valueText)
+                .font(.system(size: 20, weight: .semibold, design: .rounded))
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+
+            Text(detailText)
+                .font(.caption)
+                .foregroundStyle(model.phase == .failed ? Color.red : Color.secondary)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Spacer(minLength: 0)
+
+            Button(action: model.run) {
+                Text(model.isRunning ? "Testing…" : "Run Test")
+                    .frame(maxWidth: .infinity)
+            }
+            .controlSize(.small)
+            .disabled(model.isRunning)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color(nsColor: .controlBackgroundColor))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(.separator.opacity(0.4), lineWidth: 1)
+        )
+    }
+
+    private func mbpsText(_ value: Double) -> String {
+        let digits = value >= 100 ? 0 : 1
+        return "\(String(format: "%.\(digits)f", value)) Mbps"
     }
 }
 

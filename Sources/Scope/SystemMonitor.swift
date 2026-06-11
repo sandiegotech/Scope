@@ -98,6 +98,16 @@ final class SystemMonitor: ObservableObject {
         }
     }
 
+    func resetDownlinkTotal() {
+        sampler.resetDownlinkTotal()
+        refresh()
+    }
+
+    func resetUplinkTotal() {
+        sampler.resetUplinkTotal()
+        refresh()
+    }
+
     func history(for app: AppUsageMetric) -> AppUsageHistory? {
         appHistories[app.historyKey]
     }
