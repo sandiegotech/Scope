@@ -7,6 +7,8 @@ final class SystemMonitor: ObservableObject {
     @Published private(set) var snapshot = SystemSnapshot.placeholder
     @Published private(set) var isScanningDetails = false
     @Published private(set) var appHistories: [String: AppUsageHistory] = [:]
+    @Published private(set) var batterySessions: [BatterySession] = []
+    @Published private(set) var activeSession: BatterySession?
 
     private let sampler = MetricsSampler()
     private var deepMetrics = DeepMetrics.empty
@@ -14,12 +16,14 @@ final class SystemMonitor: ObservableObject {
     private var liveScanTimer: Timer?
     private var isScanningLive = false
     private var liveScanCount = 0
+    private var sessionDrainerAccumulator: [String: Double] = [:]
+    private var lastBatteryWasPluggedIn: Bool? = nil
+    private let sessionsKey = "scope_battery_sessions_v1"
 
     init() {
         deepMetrics = .visibleFallback(from: runningAppProfiles())
         recordAppHistory(from: deepMetrics.topApps)
-        refresh()
-        refreshLiveDetails(includeExpensiveMetrics: false)
+        batterySessions = loadBatterySessions()
 
         timer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
             Task { @MainActor in
@@ -32,10 +36,17 @@ final class SystemMonitor: ObservableObject {
                 self?.refreshLiveDetails()
             }
         }
+
+        // Defer first load so the placeholder UI renders immediately on launch
+        Task { @MainActor [weak self] in
+            self?.refresh()
+            self?.refreshLiveDetails(includeExpensiveMetrics: false)
+        }
     }
 
     func refresh(forceDeep: Bool = false) {
         snapshot = sampler.capture(deepMetrics: deepMetrics)
+        trackBatterySessionTransition()
 
         if forceDeep {
             refreshDetails()
@@ -131,6 +142,7 @@ final class SystemMonitor: ObservableObject {
         }
 
         appHistories = histories
+        accumulateSessionApps(apps)
     }
 
     private func runningAppProfiles() -> [RunningAppProfile] {
@@ -152,5 +164,96 @@ final class SystemMonitor: ObservableObject {
                 isVisible: app.activationPolicy == .regular
             )
         }
+    }
+
+    // MARK: - Battery Session Tracking
+
+    private func trackBatterySessionTransition() {
+        let battery = snapshot.battery
+        guard battery.levelRatio != nil else { return }
+
+        let isPluggedIn = battery.isPluggedIn || battery.isCharging
+
+        if var session = activeSession, let watts = battery.powerWatts {
+            if session.peakPowerWatts == nil || watts > (session.peakPowerWatts ?? 0) {
+                session.peakPowerWatts = watts
+                activeSession = session
+            }
+        }
+
+        if let previous = lastBatteryWasPluggedIn {
+            if previous && !isPluggedIn {
+                startBatterySession(battery: battery)
+            } else if !previous && isPluggedIn {
+                endBatterySession(battery: battery)
+            }
+        } else if !isPluggedIn, let level = battery.levelRatio, level < 1.0 {
+            // App launched while already on battery — start tracking from now
+            startBatterySession(battery: battery)
+        }
+
+        lastBatteryWasPluggedIn = isPluggedIn
+    }
+
+    private func startBatterySession(battery: BatteryMetric) {
+        guard let level = battery.levelRatio else { return }
+        sessionDrainerAccumulator = [:]
+        activeSession = BatterySession(
+            id: UUID(),
+            startedAt: Date(),
+            endedAt: nil,
+            startPercent: level,
+            endPercent: nil,
+            topDrainers: [],
+            peakPowerWatts: battery.powerWatts
+        )
+    }
+
+    private func endBatterySession(battery: BatteryMetric) {
+        guard var session = activeSession else { return }
+        session.endedAt = Date()
+        session.endPercent = battery.levelRatio
+        session.topDrainers = topDrainersFromAccumulator()
+
+        var sessions = batterySessions
+        sessions.append(session)
+        if sessions.count > 10 {
+            sessions.removeFirst(sessions.count - 10)
+        }
+        batterySessions = sessions
+        saveBatterySessions(sessions)
+        activeSession = nil
+        sessionDrainerAccumulator = [:]
+    }
+
+    private func accumulateSessionApps(_ apps: [AppUsageMetric]) {
+        guard activeSession != nil else { return }
+        for app in apps where app.powerImpactScore > 0 {
+            sessionDrainerAccumulator[app.name, default: 0] += app.powerImpactScore
+        }
+    }
+
+    private func topDrainersFromAccumulator() -> [String] {
+        Array(
+            sessionDrainerAccumulator
+                .sorted { $0.value > $1.value }
+                .prefix(3)
+                .map(\.key)
+        )
+    }
+
+    private func loadBatterySessions() -> [BatterySession] {
+        guard
+            let data = UserDefaults.standard.data(forKey: sessionsKey),
+            let sessions = try? JSONDecoder().decode([BatterySession].self, from: data)
+        else {
+            return []
+        }
+        return sessions
+    }
+
+    private func saveBatterySessions(_ sessions: [BatterySession]) {
+        guard let data = try? JSONEncoder().encode(sessions) else { return }
+        UserDefaults.standard.set(data, forKey: sessionsKey)
     }
 }

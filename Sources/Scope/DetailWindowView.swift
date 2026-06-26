@@ -90,7 +90,7 @@ struct DetailWindowView: View {
         case .health:
             health
         case .github:
-            github
+            GitHubSyncView(monitor: gitHubSync)
         }
     }
 
@@ -236,6 +236,25 @@ struct DetailWindowView: View {
                     PlainInfoRow(title: "Charge", value: monitor.snapshot.battery.primaryText, detail: monitor.snapshot.battery.detailText)
                     PlainInfoRow(title: "Power", value: monitor.snapshot.battery.powerDrawText, detail: monitor.snapshot.battery.adapterText)
                     PlainInfoRow(title: "Health", value: monitor.snapshot.battery.healthText, detail: monitor.snapshot.battery.levelRatio == nil ? "No internal battery reported" : "Reported by macOS power sources and battery registry")
+                }
+            }
+
+            SectionBlock(title: "Battery Sessions", symbol: "clock.arrow.circlepath") {
+                let sessions: [BatterySession] = {
+                    var all: [BatterySession] = []
+                    if let active = monitor.activeSession { all.append(active) }
+                    all.append(contentsOf: monitor.batterySessions.suffix(5).reversed())
+                    return all
+                }()
+
+                if sessions.isEmpty {
+                    EmptyState(text: "No discharge sessions recorded yet. Unplug your Mac to start tracking.")
+                } else {
+                    VStack(spacing: 6) {
+                        ForEach(sessions) { session in
+                            BatterySessionRow(session: session)
+                        }
+                    }
                 }
             }
         }
@@ -549,10 +568,6 @@ struct DetailWindowView: View {
         }
     }
 
-    private var github: some View {
-        GitHubSyncView(monitor: gitHubSync)
-    }
-
     private var healthValue: String {
         if monitor.snapshot.sensors.thermalState == "Serious" || monitor.snapshot.sensors.thermalState == "Critical" {
             return "Thermal"
@@ -708,20 +723,13 @@ private enum DetailSection: String, CaseIterable, Identifiable {
 
     var symbol: String {
         switch self {
-        case .overview:
-            return "opticaldiscdrive"
-        case .power:
-            return "bolt.horizontal"
-        case .storage:
-            return "internaldrive"
-        case .apps:
-            return "app.connected.to.app.below.fill"
-        case .network:
-            return "arrow.up.arrow.down"
-        case .health:
-            return "gauge.with.dots.needle.67percent"
-        case .github:
-            return "arrow.triangle.2.circlepath"
+        case .overview: return "opticaldiscdrive"
+        case .power:    return "bolt.horizontal"
+        case .storage:  return "internaldrive"
+        case .apps:     return "app.connected.to.app.below.fill"
+        case .network:  return "arrow.up.arrow.down"
+        case .health:   return "gauge.with.dots.needle.67percent"
+        case .github:   return "arrow.triangle.2.circlepath"
         }
     }
 }
@@ -1913,6 +1921,65 @@ private struct NetworkConnectionRow: View {
         }
         .rowBackground()
         .help(connection.inspectionText)
+    }
+}
+
+private struct BatterySessionRow: View {
+    let session: BatterySession
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Image(systemName: session.isActive ? "bolt.circle.fill" : "battery.0percent")
+                        .foregroundStyle(session.isActive ? .green : .secondary)
+                        .font(.system(size: 12))
+
+                    Text(session.dateText)
+                        .font(.system(size: 13, weight: .medium))
+
+                    if session.isActive {
+                        Text("Active")
+                            .font(.system(size: 11, weight: .medium))
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .background(Color.green.opacity(0.12))
+                            .foregroundStyle(.green)
+                            .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+                    }
+                }
+
+                HStack(spacing: 14) {
+                    Label(session.durationText, systemImage: "clock")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    Label(session.drainText, systemImage: "minus.circle")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                if !session.topDrainers.isEmpty {
+                    Text("Top drain: \(session.topDrainers.joined(separator: ", "))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Spacer()
+
+            if let peakWatts = session.peakPowerWatts {
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text(peakWatts.wattsString)
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.orange)
+                    Text("peak draw")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .rowBackground()
     }
 }
 

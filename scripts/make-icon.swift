@@ -37,8 +37,7 @@ for image in images {
 try drawIcon(size: 1024).write(to: previewURL)
 
 func drawIcon(size: Int) -> Data {
-    let scale = CGFloat(size)
-    let rect = CGRect(x: 0, y: 0, width: scale, height: scale)
+    let s = CGFloat(size)
     let rep = NSBitmapImageRep(
         bitmapDataPlanes: nil,
         pixelsWide: size,
@@ -56,68 +55,59 @@ func drawIcon(size: Int) -> Data {
     NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
     NSGraphicsContext.current?.imageInterpolation = .high
 
-    NSColor.clear.setFill()
-    rect.fill()
+    let cream = NSColor(red: 0.941, green: 0.929, blue: 0.910, alpha: 1)
+    let navy  = NSColor(red: 0.051, green: 0.082, blue: 0.149, alpha: 1)
 
-    let iconRect = rect.insetBy(dx: scale * 0.08, dy: scale * 0.08)
-    let corner = scale * 0.21
-    let basePath = NSBezierPath(roundedRect: iconRect, xRadius: corner, yRadius: corner)
+    // Full canvas — macOS applies squircle mask at system level
+    cream.setFill()
+    NSBezierPath(rect: CGRect(x: 0, y: 0, width: s, height: s)).fill()
 
-    let shadow = NSShadow()
-    shadow.shadowColor = NSColor.black.withAlphaComponent(0.22)
-    shadow.shadowBlurRadius = scale * 0.045
-    shadow.shadowOffset = CGSize(width: 0, height: -scale * 0.018)
-    shadow.set()
+    navy.setFill()
+    navy.setStroke()
 
-    NSColor(red: 0.94, green: 0.96, blue: 0.95, alpha: 1).setFill()
-    basePath.fill()
+    let strokeW: CGFloat = s * 0.044
 
-    NSGraphicsContext.current?.cgContext.setShadow(offset: .zero, blur: 0, color: nil)
+    // Box — flat device body, centered
+    let boxW    = s * 0.580
+    let boxH    = s * 0.230
+    let boxX    = (s - boxW) / 2
+    let boxCY   = s * 0.500
+    let boxY    = boxCY - boxH / 2
+    let boxRect = CGRect(x: boxX, y: boxY, width: boxW, height: boxH)
 
-    let gradient = NSGradient(colors: [
-        NSColor(red: 0.99, green: 0.99, blue: 0.98, alpha: 1),
-        NSColor(red: 0.86, green: 0.93, blue: 0.91, alpha: 1)
-    ])!
-    gradient.draw(in: basePath, angle: -35)
+    let boxPath = NSBezierPath(roundedRect: boxRect, xRadius: s * 0.036, yRadius: s * 0.036)
+    boxPath.lineWidth = strokeW
+    boxPath.stroke()
 
-    let diskFrame = CGRect(
-        x: scale * 0.265,
-        y: scale * 0.275,
-        width: scale * 0.47,
-        height: scale * 0.47
-    )
+    // Two port circles on the left side
+    let portR   = s * 0.032
+    let portCY  = boxCY
+    let port1CX = boxX + boxW * 0.195
+    let port2CX = boxX + boxW * 0.385
 
-    let diskPath = NSBezierPath(ovalIn: diskFrame)
-    NSColor(red: 0.10, green: 0.12, blue: 0.14, alpha: 1).setFill()
-    diskPath.fill()
+    for cx in [port1CX, port2CX] {
+        NSBezierPath(ovalIn: CGRect(
+            x: cx - portR, y: portCY - portR,
+            width: portR * 2, height: portR * 2
+        )).fill()
+    }
 
-    let innerFrame = diskFrame.insetBy(dx: scale * 0.115, dy: scale * 0.115)
-    let innerPath = NSBezierPath(ovalIn: innerFrame)
-    NSColor(red: 0.94, green: 0.96, blue: 0.95, alpha: 1).setFill()
-    innerPath.fill()
+    // Three vent slots on the right side
+    let ventX  = boxX + boxW * 0.618
+    let ventW  = boxW * 0.272
+    let ventH  = s * 0.017
+    let ventR  = ventH / 2
+    let vGap   = s * 0.044
 
-    let hubFrame = diskFrame.insetBy(dx: scale * 0.205, dy: scale * 0.205)
-    NSColor(red: 0.10, green: 0.12, blue: 0.14, alpha: 1).setFill()
-    NSBezierPath(ovalIn: hubFrame).fill()
-
-    let accentFrame = CGRect(
-        x: scale * 0.62,
-        y: scale * 0.61,
-        width: scale * 0.11,
-        height: scale * 0.11
-    )
-    NSColor(red: 0.00, green: 0.63, blue: 0.62, alpha: 1).setFill()
-    NSBezierPath(ovalIn: accentFrame).fill()
-
-    let footerFrame = CGRect(
-        x: scale * 0.34,
-        y: scale * 0.22,
-        width: scale * 0.32,
-        height: scale * 0.035
-    )
-    let footerPath = NSBezierPath(roundedRect: footerFrame, xRadius: scale * 0.018, yRadius: scale * 0.018)
-    NSColor(red: 0.10, green: 0.12, blue: 0.14, alpha: 0.22).setFill()
-    footerPath.fill()
+    for offset in [-vGap, 0, vGap] {
+        let ventRect = CGRect(
+            x: ventX,
+            y: boxCY + offset - ventH / 2,
+            width: ventW,
+            height: ventH
+        )
+        NSBezierPath(roundedRect: ventRect, xRadius: ventR, yRadius: ventR).fill()
+    }
 
     NSGraphicsContext.restoreGraphicsState()
 

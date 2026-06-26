@@ -367,6 +367,62 @@ struct BatteryMetric {
     }
 }
 
+struct BatterySession: Codable, Identifiable {
+    var id: UUID
+    var startedAt: Date
+    var endedAt: Date?
+    var startPercent: Double
+    var endPercent: Double?
+    var topDrainers: [String]
+    var peakPowerWatts: Double?
+
+    var isActive: Bool { endedAt == nil }
+
+    var drainRatio: Double? {
+        guard let endPercent else { return nil }
+        return max(0, startPercent - endPercent)
+    }
+
+    var effectiveDuration: TimeInterval {
+        (endedAt ?? Date()).timeIntervalSince(startedAt)
+    }
+
+    var drainText: String {
+        let startPct = Int((startPercent * 100).rounded())
+        if let endPercent {
+            let endPct = Int((endPercent * 100).rounded())
+            let drain = startPct - endPct
+            if drain > 0 { return "\(startPct)% → \(endPct)% (−\(drain)%)" }
+            return "\(startPct)% → \(endPct)%"
+        }
+        return "\(startPct)% → draining"
+    }
+
+    var durationText: String {
+        let secs = Int(effectiveDuration)
+        let hours = secs / 3600
+        let minutes = (secs % 3600) / 60
+        if hours > 0 { return "\(hours)h \(minutes)m" }
+        if minutes > 0 { return "\(minutes)m" }
+        return "<1m"
+    }
+
+    var dateText: String {
+        let cal = Calendar.current
+        let tf = DateFormatter()
+        tf.timeStyle = .short
+        tf.dateStyle = .none
+        if cal.isDateInToday(startedAt) {
+            return "Today, \(tf.string(from: startedAt))"
+        }
+        if cal.isDateInYesterday(startedAt) {
+            return "Yesterday, \(tf.string(from: startedAt))"
+        }
+        tf.dateStyle = .short
+        return tf.string(from: startedAt)
+    }
+}
+
 struct NetworkMetric {
     let downloadBytesPerSecond: UInt64
     let uploadBytesPerSecond: UInt64
@@ -2054,6 +2110,7 @@ final class MetricsSampler {
     private var cachedSmartBatteryAt: Date?
     private var cachedAdapterWatts: Int?
     private var cachedPowerAdapterAt: Date?
+    private var cachedHostName: String?
     private let slowSensorRefreshInterval: TimeInterval = 30
 
     func capture(deepMetrics: DeepMetrics = .empty) -> SystemSnapshot {
@@ -3152,6 +3209,10 @@ final class MetricsSampler {
         let processInfo = ProcessInfo.processInfo
         let thermal = processInfo.thermalState
 
+        if cachedHostName == nil {
+            cachedHostName = Host.current().localizedName ?? "This Mac"
+        }
+
         return SensorStatusMetric(
             thermalState: thermal.label,
             thermalDetail: thermal.detail,
@@ -3160,7 +3221,7 @@ final class MetricsSampler {
             activeCoreCount: processInfo.activeProcessorCount,
             coreCount: processInfo.processorCount,
             osVersion: processInfo.operatingSystemVersionString,
-            hostName: Host.current().localizedName ?? "This Mac",
+            hostName: cachedHostName ?? "This Mac",
             powerAdapterWatts: cachedPowerAdapterWatts()
         )
     }

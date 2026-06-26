@@ -7,14 +7,8 @@ struct GitHubSyncView: View {
 
     private var visibleRepos: [GitHubRepoStatus] {
         switch filter {
-        case .attention:
-            return monitor.repos.filter(\.needsAttention)
-        case .all:
-            return monitor.repos
-        case .monolyth:
-            return monitor.repos.filter { $0.group == "monolyth" }
-        case .sanDiegoTech:
-            return monitor.repos.filter { $0.group == "san-diego-tech" }
+        case .attention: return monitor.repos.filter(\.needsAttention)
+        case .all:       return monitor.repos
         }
     }
 
@@ -128,42 +122,24 @@ struct GitHubSyncView: View {
     }
 
     private var updatedText: String {
-        if monitor.isSyncing {
-            return "Syncing repos..."
-        }
-
-        if monitor.isRefreshing {
-            return "Refreshing status..."
-        }
-
-        guard !monitor.report.generatedAt.isEmpty else {
-            return "Not scanned yet"
-        }
-
-        return "Updated \(monitor.report.generatedAt)"
+        if monitor.isSyncing    { return "Syncing repos..." }
+        if monitor.isRefreshing { return "Refreshing status..." }
+        guard let scannedAt = monitor.scannedAt else { return "Not scanned yet" }
+        return "Updated \(scannedAt.formatted(date: .omitted, time: .standard))"
     }
 }
 
 private enum GitHubSyncFilter: String, CaseIterable, Identifiable {
     case attention = "Attention"
     case all = "All"
-    case monolyth = "Monolyth"
-    case sanDiegoTech = "San Diego Tech"
 
     var id: String { rawValue }
-
     var title: String { rawValue }
 
     var icon: String {
         switch self {
-        case .attention:
-            return "exclamationmark.circle"
-        case .all:
-            return "square.grid.2x2"
-        case .monolyth:
-            return "building.2"
-        case .sanDiegoTech:
-            return "sparkles.rectangle.stack"
+        case .attention: return "exclamationmark.circle"
+        case .all:       return "square.grid.2x2"
         }
     }
 }
