@@ -18,6 +18,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_DIR="$ROOT_DIR/Build/Scope.app"
+SIGN_APP_DIR="/tmp/Scope_signing.app"
 DMG_PATH="$ROOT_DIR/Build/Scope.dmg"
 NOTARY_PROFILE="${NOTARY_PROFILE:-ScopeNotary}"
 
@@ -44,18 +45,21 @@ echo "Signing identity: $IDENTITY"
 "$ROOT_DIR/scripts/build-app.sh"
 
 # --- Code sign with hardened runtime -----------------------------------------
-# Sign the inner executable first, then the bundle.
+# Copy through ditto to strip iCloud/Finder xattrs that block codesign.
+rm -rf "$SIGN_APP_DIR"
+ditto --norsrc --noextattr "$APP_DIR" "$SIGN_APP_DIR"
+
 codesign --force --options runtime --timestamp \
-  --sign "$IDENTITY" "$APP_DIR/Contents/MacOS/Scope"
+  --sign "$IDENTITY" "$SIGN_APP_DIR/Contents/MacOS/Scope"
 codesign --force --options runtime --timestamp \
-  --sign "$IDENTITY" "$APP_DIR"
+  --sign "$IDENTITY" "$SIGN_APP_DIR"
 
 echo "Verifying signature..."
-codesign --verify --strict --verbose=2 "$APP_DIR"
+codesign --verify --strict --verbose=2 "$SIGN_APP_DIR"
 
 # --- Package as a compressed .dmg --------------------------------------------
 rm -f "$DMG_PATH"
-hdiutil create -volname "Scope" -srcfolder "$APP_DIR" \
+hdiutil create -volname "Scope" -srcfolder "$SIGN_APP_DIR" \
   -ov -format UDZO "$DMG_PATH"
 
 # --- Notarize and staple -----------------------------------------------------
@@ -64,11 +68,13 @@ xcrun notarytool submit "$DMG_PATH" \
   --keychain-profile "$NOTARY_PROFILE" --wait
 
 echo "Stapling notarization ticket..."
-xcrun stapler staple "$APP_DIR"
+xcrun stapler staple "$SIGN_APP_DIR"
 xcrun stapler staple "$DMG_PATH"
 
 echo "Gatekeeper assessment:"
-spctl --assess --type execute --verbose=2 "$APP_DIR" || true
+spctl --assess --type execute --verbose=2 "$SIGN_APP_DIR" || true
+
+rm -rf "$SIGN_APP_DIR"
 
 echo
 echo "Done. Distributable build: $DMG_PATH"
